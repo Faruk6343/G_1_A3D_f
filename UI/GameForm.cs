@@ -1,10 +1,5 @@
 // ============================================================
-// GameForm.cs — Ana oyun penceresi
-//
-// YENİ ÖZELLİKLER:
-//   - Smooth hareket: Hız vektörü + ivme + sürtünme (eylemsizlik hissi)
-//   - Smooth kamera: Hedef açıya yumuşak interpolasyon (Lerp)
-//   - Sağ kenar düzeltmesi: Pencere ClientSize tam hücre katı olarak ayarlandı
+// GameForm.cs — HUD entegreli ana pencere
 // ============================================================
 
 using System.Windows.Forms;
@@ -16,71 +11,44 @@ namespace G_1_A3D_f.UI
 {
     public class GameForm : Form
     {
-        // ── Izgara boyutları ──
-        private const int COLS   = 150;   // Yatay karakter sayısı
-        private const int ROWS   = 42;    // Dikey karakter sayısı
-        private const int CELL_W = 7;     // Bir karakterin piksel genişliği
-        private const int CELL_H = 13;    // Bir karakterin piksel yüksekliği
+        private const int COLS   = 320;
+        private const int ROWS   = 90;
+        private const int CELL_W = 6;
+        private const int CELL_H = 12;
 
-        // ── Hareket parametreleri ──
-        private const float MOVE_SPEED   = 6.0f;   // Maksimum hız (birim/saniye)
-        private const float ACCELERATION = 24.0f;  // İvme katsayısı — hızlanma sertliği
-        private const float FRICTION     = 16.0f;  // Sürtünme — duruş sertliği
-
-        // ── Fare hassasiyeti ──
-        private const float SENS_X = 0.0012f;  // Yatay dönüş
-        private const float SENS_Y = 0.15f;    // Dikey bakış
-
-        // ── Kamera yumuşatma (Lerp katsayısı) ──
-        // Yüksek değer = daha ani, düşük değer = daha süzülen
+        private const float MOVE_SPEED   = 6.0f;
+        private const float ACCELERATION = 24.0f;
+        private const float FRICTION     = 16.0f;
+        private const float SENS_X       = 0.0012f;
+        private const float SENS_Y       = 0.20f;
         private const float YAW_SMOOTH   = 22.0f;
         private const float PITCH_SMOOTH = 18.0f;
+        private const float PITCH_MAX    =  30.0f;
+        private const float PITCH_MIN    = -30.0f;
+        private const float BOB_FREQ     =  9.0f;
+        private const float BOB_AMP      =  1.5f;
 
-        // ── Pitch sınırları (satır cinsinden) ──
-        private const float PITCH_MAX =  14.0f;
-        private const float PITCH_MIN = -14.0f;
-
-        // ── Yürüyüş sarsıntısı ──
-        private const float BOB_FREQ  = 9.0f;   // Frekans (Hz)
-        private const float BOB_AMP   = 1.5f;   // Genlik (satır)
-
-        // ── Oyun nesneleri ──
         private readonly Renderer _renderer;
+        private readonly HUD      _hud;
         private readonly Map      _map;
+        private          bool[,]  _mapWalls;   // Minimap için duvar verisi
 
-        // ── Oyuncu konumu ──
-        private float _px = 12.0f;   // Haritada X
-        private float _py = 12.0f;   // Haritada Y
+        private float _px = 12.0f, _py = 12.0f;
+        private float _vx = 0f,    _vy = 0f;
+        private float _yaw = 0f,   _pitch = 0f;
+        private float _targetYaw = 0f, _targetPitch = 0f;
+        private float _bobPhase = 0f,  _bobOffset = 0f;
 
-        // ── Hız vektörü (smooth hareket için) ──
-        private float _vx = 0f;
-        private float _vy = 0f;
+        // Oyuncu istatistikleri (şimdilik sabit, ileride oyun sistemiyle bağlanacak)
+        private int _health = 100;
+        private int _ammo   = 30;
 
-        // ── Kamera anlık değerleri (render bu değerleri kullanır) ──
-        private float _yaw   = 0f;   // Yatay bakış açısı (radyan)
-        private float _pitch = 0f;   // Dikey bakış ofseti (satır)
-
-        // ── Kamera hedef değerleri (fare inputu bunları günceller) ──
-        private float _targetYaw   = 0f;
-        private float _targetPitch = 0f;
-
-        // ── Bob ──
-        private float _bobPhase  = 0f;
-        private float _bobOffset = 0f;
-
-        // ── Zamanlama ──
         private readonly System.Windows.Forms.Timer _gameTimer;
         private DateTime _lastTick;
-
-        // ── Fare girişi ──
         private bool _skipMouse = false;
-        private int  _mdx = 0;   // Biriken yatay fare deltası
-        private int  _mdy = 0;   // Biriken dikey fare deltası
-
-        // ── Klavye ──
+        private int  _mdx = 0, _mdy = 0;
         private readonly Dictionary<Keys, bool> _keys = new();
 
-        // ─────────────────────────────────────────────────────────
         public GameForm()
         {
             Text            = "G_1_A3D_f — ASCII 3D Shooter";
@@ -88,36 +56,30 @@ namespace G_1_A3D_f.UI
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox     = false;
             DoubleBuffered  = true;
-
-            // Pencere boyutu: tam hücre sayısı × hücre boyutu
-            // Böylece sağ/alt kenarda yarım hücre kalmaz → bozukluk önlenir
-            ClientSize    = new Size(COLS * CELL_W, ROWS * CELL_H);
-            StartPosition = FormStartPosition.CenterScreen;
+            ClientSize      = new Size(COLS * CELL_W, ROWS * CELL_H);
+            StartPosition   = FormStartPosition.CenterScreen;
 
             _renderer = new Renderer(COLS, ROWS, CELL_W, CELL_H);
-            _map      = BuildTestMap();
+            _hud      = new HUD(COLS * CELL_W, ROWS * CELL_H);
+            _map      = BuildTestMap(out _mapWalls);
 
             Cursor.Hide();
             CenterMouse();
 
             _gameTimer          = new System.Windows.Forms.Timer();
-            _gameTimer.Interval = 4;   // ~250 FPS hedef
+            _gameTimer.Interval = 4;
             _gameTimer.Tick    += Tick;
             _gameTimer.Start();
-
             _lastTick = DateTime.Now;
         }
 
-        // ─────────────────────────────────────────────────────────
-        // Tick — Ana oyun döngüsü (4ms'de bir)
-        // ─────────────────────────────────────────────────────────
         private void Tick(object? s, EventArgs e)
         {
             var   now = DateTime.Now;
             float dt  = Math.Clamp((float)(now - _lastTick).TotalSeconds, 0f, 0.05f);
             _lastTick = now;
 
-            // ── 1. Fare → Hedef kamera açıları ──
+            // Fare → hedef açılar
             if (_mdx != 0)
             {
                 _targetYaw += _mdx * SENS_X;
@@ -127,71 +89,54 @@ namespace G_1_A3D_f.UI
             }
             if (_mdy != 0)
             {
-                _targetPitch += _mdy * SENS_Y;
+                _targetPitch -= _mdy * SENS_Y;
                 _targetPitch  = Math.Clamp(_targetPitch, PITCH_MIN, PITCH_MAX);
                 _mdy = 0;
             }
 
-            // ── 2. Kamera Lerp (smooth) ──
-            // Lerp: A + (B - A) * t → A'dan B'ye doğru t hızında yaklaş
-            // dt * katsayı: Kare hızından bağımsız yumuşatma
-            float yawFactor   = Math.Clamp(YAW_SMOOTH   * dt, 0f, 1f);
-            float pitchFactor = Math.Clamp(PITCH_SMOOTH  * dt, 0f, 1f);
-
-            // Yaw için kısa yol hesabı: 0→2π sınırında dönüş açısı doğru taraftan gitsin
-            float yawDiff = _targetYaw - _yaw;
-            if (yawDiff >  MathF.PI) yawDiff -= MathF.PI * 2f;
-            if (yawDiff < -MathF.PI) yawDiff += MathF.PI * 2f;
-            _yaw += yawDiff * yawFactor;
+            // Kamera Lerp
+            float yf = Math.Clamp(YAW_SMOOTH   * dt, 0f, 1f);
+            float pf = Math.Clamp(PITCH_SMOOTH  * dt, 0f, 1f);
+            float yd = _targetYaw - _yaw;
+            if (yd >  MathF.PI) yd -= MathF.PI * 2f;
+            if (yd < -MathF.PI) yd += MathF.PI * 2f;
+            _yaw += yd * yf;
             _yaw %= MathF.PI * 2f;
             if (_yaw < 0) _yaw += MathF.PI * 2f;
+            _pitch += (_targetPitch - _pitch) * pf;
 
-            _pitch += (_targetPitch - _pitch) * pitchFactor;
+            // Hareket
+            float dx = MathF.Sin(_yaw), dy = MathF.Cos(_yaw);
+            float sx = dy, sy = -dx;
+            float wx = 0f, wy = 0f;
+            if (IsDown(Keys.W)) { wx += dx; wy += dy; }
+            if (IsDown(Keys.S)) { wx -= dx; wy -= dy; }
+            if (IsDown(Keys.A)) { wx -= sx; wy -= sy; }
+            if (IsDown(Keys.D)) { wx += sx; wy += sy; }
 
-            // ── 3. Hareket yön vektörü ──
-            float dirX    =  MathF.Sin(_yaw);
-            float dirY    =  MathF.Cos(_yaw);
-            float strafeX =  dirY;
-            float strafeY = -dirX;
+            float wlen = MathF.Sqrt(wx * wx + wy * wy);
+            if (wlen > 0.001f) { wx /= wlen; wy /= wlen; }
 
-            // Girişten hedef hız vektörü oluştur
-            float wishX = 0f, wishY = 0f;
-            if (IsDown(Keys.W)) { wishX += dirX;    wishY += dirY; }
-            if (IsDown(Keys.S)) { wishX -= dirX;    wishY -= dirY; }
-            if (IsDown(Keys.A)) { wishX -= strafeX; wishY -= strafeY; }
-            if (IsDown(Keys.D)) { wishX += strafeX; wishY += strafeY; }
+            _vx += (wx * MOVE_SPEED - _vx) * Math.Clamp(ACCELERATION * dt, 0f, 1f);
+            _vy += (wy * MOVE_SPEED - _vy) * Math.Clamp(ACCELERATION * dt, 0f, 1f);
 
-            // Normalize: Çapraz harekette hız artmasın
-            float wishLen = MathF.Sqrt(wishX * wishX + wishY * wishY);
-            if (wishLen > 0.001f) { wishX /= wishLen; wishY /= wishLen; }
-
-            // ── 4. Hız vektörüne ivme + sürtünme uygula ──
-            // İvme: Hedefe doğru yaklaş
-            _vx += (wishX * MOVE_SPEED - _vx) * Math.Clamp(ACCELERATION * dt, 0f, 1f);
-            _vy += (wishY * MOVE_SPEED - _vy) * Math.Clamp(ACCELERATION * dt, 0f, 1f);
-
-            // Sürtünme: Tuşa basılı değilse yavaşla
-            if (wishLen < 0.001f)
+            if (wlen < 0.001f)
             {
-                float friction = Math.Clamp(FRICTION * dt, 0f, 1f);
-                _vx *= (1f - friction);
-                _vy *= (1f - friction);
-                // Çok küçükse sıfırla — titreme önle
+                float fr = Math.Clamp(FRICTION * dt, 0f, 1f);
+                _vx *= (1f - fr); _vy *= (1f - fr);
                 if (MathF.Abs(_vx) < 0.001f) _vx = 0f;
                 if (MathF.Abs(_vy) < 0.001f) _vy = 0f;
             }
 
-            // ── 5. Çarpışma kontrolü ile pozisyon güncelle ──
             if (_map.IsWalkable((int)(_px + _vx * dt), (int)_py)) _px += _vx * dt;
             if (_map.IsWalkable((int)_px, (int)(_py + _vy * dt))) _py += _vy * dt;
 
-            // ── 6. Yürüyüş sarsıntısı ──
-            bool moving = wishLen > 0.001f;
-            if (moving)
+            // Bob
+            if (wlen > 0.001f)
             {
-                _bobPhase  += BOB_FREQ * dt;
+                _bobPhase += BOB_FREQ * dt;
                 if (_bobPhase > MathF.PI * 2f) _bobPhase -= MathF.PI * 2f;
-                _bobOffset  = MathF.Sin(_bobPhase) * BOB_AMP;
+                _bobOffset = MathF.Sin(_bobPhase) * BOB_AMP;
             }
             else
             {
@@ -200,13 +145,16 @@ namespace G_1_A3D_f.UI
             }
 
             if (IsDown(Keys.Escape)) Close();
-
             Invalidate();
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            // Önce 3D dünya
             _renderer.Render(e.Graphics, _px, _py, _yaw, _pitch + _bobOffset, _map);
+
+            // Sonra HUD (üstüne)
+            _hud.DrawAll(e.Graphics, _bobOffset, _health, _ammo, _mapWalls, _px, _py, _yaw);
         }
 
         protected override void OnKeyDown(KeyEventArgs e) => _keys[e.KeyCode] = true;
@@ -216,10 +164,8 @@ namespace G_1_A3D_f.UI
         protected override void OnMouseMove(MouseEventArgs e)
         {
             if (_skipMouse) { _skipMouse = false; return; }
-            int cx = ClientSize.Width  / 2;
-            int cy = ClientSize.Height / 2;
-            _mdx += e.X - cx;
-            _mdy += e.Y - cy;
+            int cx = ClientSize.Width / 2, cy = ClientSize.Height / 2;
+            _mdx += e.X - cx; _mdy += e.Y - cy;
             _skipMouse = true;
             Cursor.Position = PointToScreen(new Point(cx, cy));
         }
@@ -232,31 +178,34 @@ namespace G_1_A3D_f.UI
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
-            _gameTimer.Stop();
-            Cursor.Show();
-            base.OnFormClosed(e);
+            _gameTimer.Stop(); Cursor.Show(); base.OnFormClosed(e);
         }
 
-        // ── Test haritası ──
-        private static Map BuildTestMap()
+        // Test haritası — bool[,] minimap için de döner
+        private static Map BuildTestMap(out bool[,] walls)
         {
-            var map = new Map(24, 24);
-            for (int i = 0; i < 24; i++)
+            int w = 24, h = 24;
+            var map  = new Map(w, h);
+            // out parametresi local function içinde kullanılamaz → ayrı local array
+            var localWalls = new bool[w, h];
+
+            void SetWall(int x, int y)
             {
-                map.SetTile(i, 0,  TileType.Wall);
-                map.SetTile(i, 23, TileType.Wall);
-                map.SetTile(0,  i, TileType.Wall);
-                map.SetTile(23, i, TileType.Wall);
+                map.SetTile(x, y, TileType.Wall);
+                localWalls[x, y] = true;
             }
-            for (int i = 3; i <= 7;  i++) map.SetTile(i, 3,  TileType.Wall);
-            for (int i = 5; i <= 10; i++) map.SetTile(10, i, TileType.Wall);
-            for (int i = 14; i <= 18; i++) map.SetTile(i, 8,  TileType.Wall);
-            for (int i = 8;  i <= 13; i++) map.SetTile(14, i, TileType.Wall);
-            for (int i = 8;  i <= 13; i++) map.SetTile(18, i, TileType.Wall);
-            map.SetTile(5,  14, TileType.Wall);
-            map.SetTile(8,  17, TileType.Wall);
-            map.SetTile(20,  5, TileType.Wall);
-            map.SetTile(20,  6, TileType.Wall);
+
+            for (int i = 0; i < w; i++)
+            { SetWall(i, 0); SetWall(i, h-1); SetWall(0, i); SetWall(w-1, i); }
+
+            for (int i = 3; i <= 7;  i++) SetWall(i,  3);
+            for (int i = 5; i <= 10; i++) SetWall(10, i);
+            for (int i = 14; i <= 18; i++) SetWall(i,  8);
+            for (int i = 8;  i <= 13; i++) SetWall(14, i);
+            for (int i = 8;  i <= 13; i++) SetWall(18, i);
+            SetWall(5, 14); SetWall(8, 17); SetWall(20, 5); SetWall(20, 6);
+
+            walls = localWalls;
             return map;
         }
     }
