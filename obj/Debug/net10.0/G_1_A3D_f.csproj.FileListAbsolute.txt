@@ -1,0 +1,4 @@
+C:\Users\Faruk\Desktop\G_1_A3D_f\obj\Debug\net10.0\G_1_A3D_f.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Faruk\Desktop\G_1_A3D_f\obj\Debug\net10.0\G_1_A3D_f.AssemblyInfoInputs.cache
+C:\Users\Faruk\Desktop\G_1_A3D_f\obj\Debug\net10.0\G_1_A3D_f.AssemblyInfo.cs
+C:\Users\Faruk\Desktop\G_1_A3D_f\obj\Debug\net10.0\G_1_A3D_f.csproj.CoreCompileInputs.cache
