@@ -13,3 +13,12 @@ C:\Users\Faruk\Desktop\G_1_A3D_f\obj\Debug\net10.0-windows\G_1_A3D_f.pdb
 C:\Users\Faruk\Desktop\G_1_A3D_f\obj\Debug\net10.0-windows\G_1_A3D_f.genruntimeconfig.cache
 C:\Users\Faruk\Desktop\G_1_A3D_f\obj\Debug\net10.0-windows\ref\G_1_A3D_f.dll
 C:\Users\Faruk\Desktop\G_1_A3D_f\obj\Debug\net10.0-windows\G_1_A3D_f.sourcelink.json
+C:\Users\Faruk\Desktop\G_1_A3D_f\obj\Debug\net10.0-windows\G_1_A3D_f.csproj.AssemblyReference.cache
+C:\Users\Faruk\Desktop\G_1_A3D_f\bin\Debug\net10.0-windows\NAudio.dll
+C:\Users\Faruk\Desktop\G_1_A3D_f\bin\Debug\net10.0-windows\NAudio.Asio.dll
+C:\Users\Faruk\Desktop\G_1_A3D_f\bin\Debug\net10.0-windows\NAudio.Core.dll
+C:\Users\Faruk\Desktop\G_1_A3D_f\bin\Debug\net10.0-windows\NAudio.Midi.dll
+C:\Users\Faruk\Desktop\G_1_A3D_f\bin\Debug\net10.0-windows\NAudio.Wasapi.dll
+C:\Users\Faruk\Desktop\G_1_A3D_f\bin\Debug\net10.0-windows\NAudio.WinForms.dll
+C:\Users\Faruk\Desktop\G_1_A3D_f\bin\Debug\net10.0-windows\NAudio.WinMM.dll
+C:\Users\Faruk\Desktop\G_1_A3D_f\obj\Debug\net10.0-windows\G_1_A3D_f.csproj.Up2Date

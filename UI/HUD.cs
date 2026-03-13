@@ -1,13 +1,10 @@
 // ============================================================
-// HUD.cs — Oyun Arayüzü: Silah + Minimap + Can/Mermi
+// HUD.cs — Gerçek ekran boyutuyla her karede çalışan HUD
 //
-// İÇERİK:
-//   1. Silah ASCII çizimi — Ekranın alt ortasında
-//      Bob efektiyle hareket ederken sallanır
-//   2. Minimap — Sol üst köşede, haritayı küçük gösterir
-//   3. Can + Mermi göstergesi — Alt sol
-//
-// Tüm HUD renderer'ın üstüne çizilir (en son katman)
+// Constructor artık ekran boyutu almıyor.
+// DrawAll her karede sw/sh (gerçek ClientSize) alır.
+// Bu sayede DPI ölçeklendirmesi, pencere boyutu farkı
+// gibi durumlar otomatik düzeltilir.
 // ============================================================
 
 using System.Drawing;
@@ -15,240 +12,224 @@ using System.Windows.Forms;
 
 namespace G_1_A3D_f.UI
 {
-    public class HUD
+    public class HUD : IDisposable
     {
-        private readonly int _screenW;
-        private readonly int _screenH;
-        private readonly Font _fontLarge;
-        private readonly Font _fontSmall;
-        private readonly Font _fontMono;
+        private readonly Font _fontUI;
+        private readonly Font _fontLabel;
 
-        // Silah ASCII çizimi — her satır bir dizi karakter
-        // Basit bir tabanca görünümü
-        private static readonly string[] WEAPON_LINES =
+        // Ölçülmüş boyutlar — 400×100 bitmap ile güvenli ölçüm
+        private readonly int _uiCharH;
+        private readonly int _lblCharH;
+
+
+        public HUD()
         {
-            @"        ________        ",
-            @"       |   ___  |       ",
-            @"       |  |   | |___    ",
-            @"  _____|  |___| |___|   ",
-            @" |___________________|  ",
-            @"    |___|               ",
-        };
+            _fontUI     = new Font("Consolas", 12f, FontStyle.Bold,    GraphicsUnit.Point);
+            _fontLabel  = new Font("Consolas", 10f, FontStyle.Regular, GraphicsUnit.Point);
 
-        // Nişangah (crosshair) — ekranın tam ortasında
-        private static readonly string[] CROSSHAIR =
-        {
-            @"  |  ",
-            @"--+--",
-            @"  |  ",
-        };
+            // Yeterince büyük bitmap ile güvenli ölçüm
+            using var bmp = new Bitmap(400, 100);
+            using var g   = Graphics.FromImage(bmp);
 
-        public HUD(int screenW, int screenH)
-        {
-            _screenW = screenW;
-            _screenH = screenH;
+            var uiSz  = TextRenderer.MeasureText(g, "HP  100%", _fontUI,
+                new Size(400, 100), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+            var lblSz = TextRenderer.MeasureText(g, "W", _fontLabel,
+                new Size(400, 100), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
 
-            try
-            {
-                _fontLarge = new Font("Consolas", 14f, FontStyle.Bold,   GraphicsUnit.Point);
-                _fontSmall = new Font("Consolas",  9f, FontStyle.Regular, GraphicsUnit.Point);
-                _fontMono  = new Font("Consolas",  8f, FontStyle.Regular, GraphicsUnit.Point);
-            }
-            catch
-            {
-                _fontLarge = new Font("Courier New", 14f, FontStyle.Bold,   GraphicsUnit.Point);
-                _fontSmall = new Font("Courier New",  9f, FontStyle.Regular, GraphicsUnit.Point);
-                _fontMono  = new Font("Courier New",  8f, FontStyle.Regular, GraphicsUnit.Point);
-            }
+            // Fallback: 96DPI'da Consolas 12pt ≈ 9×18px
+            _uiCharH  = uiSz.Height  > 6 ? uiSz.Height  : 18;
+            _lblCharH = lblSz.Height > 6 ? lblSz.Height : 15;
         }
 
-        // ─────────────────────────────────────────────────────────
-        // DrawAll — Tüm HUD elemanlarını çiz
-        //
-        // bobOffset : Yürüyüş sarsıntısı (silah bob için)
-        // health    : Oyuncu canı (0-100)
-        // ammo      : Mermi sayısı
-        // mapData   : Minimap için harita verisi (bool[,])
-        // playerX/Y : Oyuncunun haritadaki konumu
-        // playerAng : Oyuncunun bakış açısı
-        // ─────────────────────────────────────────────────────────
+        // sw, sh: Her karede GameForm.ClientSize'dan gelen gerçek piksel boyutu
         public void DrawAll(
             Graphics g,
-            float bobOffset,
-            int health,
-            int ammo,
-            bool[,] mapData,
-            float playerX,
-            float playerY,
-            float playerAngle)
+            int      sw,
+            int      sh,
+            float    _bobOffset,
+            int      health,
+            int      ammo,
+            bool[,]  mapData,
+            float    px,
+            float    py,
+            float    angle)
         {
-            DrawWeapon(g, bobOffset);
-            DrawCrosshair(g);
-            DrawStats(g, health, ammo);
-            DrawMinimap(g, mapData, playerX, playerY, playerAngle);
+            DrawCrosshair(g, sw, sh);
+            DrawStats(g, sh, health, ammo);
+            DrawMinimap(g, sw, sh, mapData, px, py, angle);
         }
 
-        // ─────────────────────────────────────────────────────────
-        // Silah çizimi — Alt orta, bobOffset ile dikey kayma
-        // ─────────────────────────────────────────────────────────
-        private void DrawWeapon(Graphics g, float bobOffset)
+        // ── Nişangah ──────────────────────────────────────────
+        private static void DrawCrosshair(Graphics g, int sw, int sh)
         {
-            // Silah boyutu (piksel)
-            int charW = 10;
-            int charH = 18;
+            int cx = sw / 2;
+            int cy = sh / 2;
+            const int GAP = 5;
+            const int LEN = 14;
 
-            // Silahın başlangıç X konumu: Ekranın sağ orta-altı
-            int startX = _screenW / 2 + 60;
+            // Gölge katmanı
+            using var shadow = new Pen(Color.FromArgb(170, 0, 0, 0), 3.5f);
+            g.DrawLine(shadow, cx - LEN - GAP, cy, cx - GAP,        cy);
+            g.DrawLine(shadow, cx + GAP,        cy, cx + LEN + GAP, cy);
+            g.DrawLine(shadow, cx, cy - LEN - GAP, cx, cy - GAP);
+            g.DrawLine(shadow, cx, cy + GAP,        cx, cy + LEN + GAP);
 
-            // Bob etkisi: bobOffset satır kadar kaydır
-            int baseY  = _screenH - WEAPON_LINES.Length * charH - 10;
-            int startY = baseY + (int)(bobOffset * 4f);
+            // Ana renk
+            using var pen = new Pen(Color.FromArgb(245, 55, 255, 115), 1.5f);
+            g.DrawLine(pen, cx - LEN - GAP, cy, cx - GAP,        cy);
+            g.DrawLine(pen, cx + GAP,        cy, cx + LEN + GAP, cy);
+            g.DrawLine(pen, cx, cy - LEN - GAP, cx, cy - GAP);
+            g.DrawLine(pen, cx, cy + GAP,        cx, cy + LEN + GAP);
 
-            // Hafif yarı saydam arka plan
-            using var bgBrush = new SolidBrush(Color.FromArgb(80, 0, 0, 0));
-            int bgW = WEAPON_LINES.Max(l => l.Length) * charW + 10;
-            int bgH = WEAPON_LINES.Length * charH + 6;
-            g.FillRectangle(bgBrush, startX - 5, startY - 3, bgW, bgH);
-
-            // Silah çizimi
-            Color weaponColor = Color.FromArgb(200, 180, 160);
-            for (int i = 0; i < WEAPON_LINES.Length; i++)
-            {
-                TextRenderer.DrawText(g, WEAPON_LINES[i], _fontLarge,
-                    new Point(startX, startY + i * charH),
-                    weaponColor,
-                    TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
-            }
+            // Merkez nokta
+            using var dot = new SolidBrush(Color.FromArgb(245, 55, 255, 115));
+            g.FillRectangle(dot, cx - 1, cy - 1, 3, 3);
         }
 
-        // ─────────────────────────────────────────────────────────
-        // Nişangah — Ekranın tam ortasında
-        // ─────────────────────────────────────────────────────────
-        private void DrawCrosshair(Graphics g)
+        // ── Can + Mermi ────────────────────────────────────────
+        private void DrawStats(Graphics g, int sh, int health, int ammo)
         {
-            int cw  = 8, ch = 14;
-            int cx  = _screenW / 2 - (CROSSHAIR[0].Length * cw) / 2;
-            int cy  = _screenH / 2 - (CROSSHAIR.Length * ch) / 2;
+            const int OX    = 20;
+            const int BAR_W = 180;
+            const int BAR_H = 12;
+            const int PAD   = 8;
 
-            // Nişangah rengi: Parlak yeşil, hafif transparan
-            Color crossColor = Color.FromArgb(220, 0, 255, 80);
+            int panelH = _uiCharH + BAR_H + _uiCharH + PAD * 3;
 
-            for (int i = 0; i < CROSSHAIR.Length; i++)
-            {
-                TextRenderer.DrawText(g, CROSSHAIR[i], _fontMono,
-                    new Point(cx, cy + i * ch),
-                    crossColor,
-                    TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
-            }
-        }
+            // sh'ye göre alt köşe
+            int oy = sh - panelH - 20;
 
-        // ─────────────────────────────────────────────────────────
-        // Can + Mermi göstergesi — Sol alt köşe
-        // ─────────────────────────────────────────────────────────
-        private void DrawStats(Graphics g, int health, int ammo)
-        {
-            int x = 20;
-            int y = _screenH - 70;
+            // Panel arka plan
+            using var panelBg = new SolidBrush(Color.FromArgb(145, 8, 8, 8));
+            g.FillRectangle(panelBg, OX - 8, oy - 8, BAR_W + 30, panelH + 16);
 
-            // Arka plan şeridi
-            using var bg = new SolidBrush(Color.FromArgb(120, 0, 0, 0));
-            g.FillRectangle(bg, x - 5, y - 5, 260, 65);
+            // Sol kenar accent
+            using var accent = new Pen(Color.FromArgb(170, 110, 75, 40), 2f);
+            g.DrawLine(accent, OX - 8, oy - 8, OX - 8, oy - 8 + panelH + 16);
 
-            // CAN göstergesi
-            // Renk: Yüksek can = yeşil, orta = sarı, düşük = kırmızı
-            Color hpColor = health > 60
-                ? Color.FromArgb(80, 220, 80)
+            // Can rengi
+            Color hpCol = health > 60
+                ? Color.FromArgb(60, 215, 60)
                 : health > 30
-                    ? Color.FromArgb(220, 200, 60)
-                    : Color.FromArgb(220, 60, 60);
+                    ? Color.FromArgb(215, 190, 40)
+                    : Color.FromArgb(215, 50, 50);
 
-            // Can bar: █ karakterleriyle doldurulan çubuk
-            int   barLen    = 20;
-            int   filled    = (int)(health / 100f * barLen);
-            string hpBar   = new string('█', filled) + new string('░', barLen - filled);
-
-            TextRenderer.DrawText(g, $"♥ {health:D3}%", _fontSmall,
-                new Point(x, y), hpColor,
+            TextRenderer.DrawText(g, $"HP  {health,3}%", _fontUI,
+                new Point(OX, oy), hpCol,
                 TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
 
-            TextRenderer.DrawText(g, $"[{hpBar}]", _fontMono,
-                new Point(x, y + 22), hpColor,
-                TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+            // Can barı
+            int barY   = oy + _uiCharH + 4;
+            int filled = (int)(health / 100f * BAR_W);
 
-            // Mermi göstergesi
-            Color ammoColor = ammo > 10
-                ? Color.FromArgb(200, 200, 120)
-                : Color.FromArgb(220, 100, 60);
+            using var barBg = new SolidBrush(Color.FromArgb(80, 50, 50, 50));
+            g.FillRectangle(barBg, OX, barY, BAR_W, BAR_H);
 
-            TextRenderer.DrawText(g, $"◆ {ammo:D3}", _fontSmall,
-                new Point(x + 140, y), ammoColor,
+            using var barFg = new SolidBrush(hpCol);
+            if (filled > 0) g.FillRectangle(barFg, OX, barY, filled, BAR_H);
+
+            // Segment çizgileri
+            using var segPen = new Pen(Color.FromArgb(55, 0, 0, 0), 1f);
+            for (int s = 1; s < 10; s++)
+                g.DrawLine(segPen,
+                    OX + s * BAR_W / 10, barY,
+                    OX + s * BAR_W / 10, barY + BAR_H);
+
+            using var barBorder = new Pen(Color.FromArgb(110, 90, 90, 90), 1f);
+            g.DrawRectangle(barBorder, OX, barY, BAR_W, BAR_H);
+
+            // Mermi
+            Color ammoCol = ammo > 10
+                ? Color.FromArgb(210, 195, 105)
+                : Color.FromArgb(210, 100, 50);
+
+            TextRenderer.DrawText(g, $"AMM {ammo,3}", _fontUI,
+                new Point(OX, barY + BAR_H + PAD), ammoCol,
                 TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
         }
 
-        // ─────────────────────────────────────────────────────────
-        // Minimap — Sağ üst köşe
-        // Her hücre MAP_CELL piksel büyüklüğünde
-        // ─────────────────────────────────────────────────────────
+        // ── Minimap ────────────────────────────────────────────
         private void DrawMinimap(
-            Graphics g,
-            bool[,] mapData,
-            float playerX,
-            float playerY,
-            float playerAngle)
+            Graphics g, int sw, int sh,
+            bool[,] map,
+            float px, float py, float angle)
         {
-            const int MAP_CELL   = 6;    // Her harita hücresi kaç piksel
-            const int MAP_MARGIN = 15;   // Köşeden mesafe
+            const int CELL   = 5;
+            const int MARGIN = 15;
 
-            int mapW = mapData.GetLength(0);
-            int mapH = mapData.GetLength(1);
+            int mw = map.GetLength(0);
+            int mh = map.GetLength(1);
+            int pw = mw * CELL;
+            int ph = mh * CELL;
 
-            int mmW = mapW * MAP_CELL;
-            int mmH = mapH * MAP_CELL;
+            // sw'ye göre sağ üst köşe
+            // MAP etiketi için üstte 20px boşluk bırakılır
+            const int LABEL_H = 20;
+            int ox = sw - pw - MARGIN;
+            int oy = MARGIN + LABEL_H;   // Etiket alanı kadar aşağı
 
-            // Sağ üst köşeye yerleştir
-            int ox = _screenW - mmW - MAP_MARGIN;
-            int oy = MAP_MARGIN;
+            // Dış gölge (etiket alanı dahil)
+            using var outerBg = new SolidBrush(Color.FromArgb(120, 0, 0, 0));
+            g.FillRectangle(outerBg, ox - 4, oy - LABEL_H - 4, pw + 8, ph + LABEL_H + 8);
 
-            // Arka plan
-            using var bgBrush = new SolidBrush(Color.FromArgb(160, 10, 10, 10));
-            g.FillRectangle(bgBrush, ox - 2, oy - 2, mmW + 4, mmH + 4);
+            // Harita zemin
+            using var mapBg = new SolidBrush(Color.FromArgb(195, 12, 12, 12));
+            g.FillRectangle(mapBg, ox, oy, pw, ph);
 
-            // Harita hücreleri
-            using var wallBrush  = new SolidBrush(Color.FromArgb(200, 140, 100, 70));
-            using var floorBrush = new SolidBrush(Color.FromArgb(200, 35, 35, 35));
+            // Hücreler
+            using var wallBr  = new SolidBrush(Color.FromArgb(220, 140, 105, 70));
+            using var floorBr = new SolidBrush(Color.FromArgb(220, 28, 28, 28));
 
-            for (int x = 0; x < mapW; x++)
-            {
-                for (int y = 0; y < mapH; y++)
-                {
-                    var brush = mapData[x, y] ? wallBrush : floorBrush;
-                    g.FillRectangle(brush,
-                        ox + x * MAP_CELL,
-                        oy + y * MAP_CELL,
-                        MAP_CELL - 1,
-                        MAP_CELL - 1);
-                }
-            }
+            for (int x = 0; x < mw; x++)
+                for (int y = 0; y < mh; y++)
+                    g.FillRectangle(
+                        map[x, y] ? wallBr : floorBr,
+                        ox + x * CELL, oy + y * CELL, CELL - 1, CELL - 1);
 
-            // Oyuncu noktası — parlak sarı üçgen (bakış yönüne göre)
-            int ppx = ox + (int)(playerX * MAP_CELL);
-            int ppy = oy + (int)(playerY * MAP_CELL);
+            // FOV koni
+            int   ppx  = ox + (int)(px * CELL);
+            int   ppy  = oy + (int)(py * CELL);
+            float fov  = MathF.PI / 3f;
+            float flen = CELL * 4.5f;
 
-            // Bakış yönü çizgisi
-            float lookLen = MAP_CELL * 2.5f;
-            int   lx2     = ppx + (int)(MathF.Sin(playerAngle) * lookLen);
-            int   ly2     = ppy + (int)(MathF.Cos(playerAngle) * lookLen);
+            int lx1 = ppx + (int)(MathF.Sin(angle - fov / 2) * flen);
+            int ly1 = ppy + (int)(MathF.Cos(angle - fov / 2) * flen);
+            int lx2 = ppx + (int)(MathF.Sin(angle + fov / 2) * flen);
+            int ly2 = ppy + (int)(MathF.Cos(angle + fov / 2) * flen);
 
-            using var dirPen = new Pen(Color.FromArgb(255, 255, 220, 0), 1.5f);
-            g.DrawLine(dirPen, ppx, ppy, lx2, ly2);
+            using var foniBr = new SolidBrush(Color.FromArgb(38, 255, 220, 0));
+            g.FillPolygon(foniBr, new Point[]
+                { new(ppx, ppy), new(lx1, ly1), new(lx2, ly2) });
+
+            // Bakış yönü
+            int fx = ppx + (int)(MathF.Sin(angle) * flen * 0.85f);
+            int fy = ppy + (int)(MathF.Cos(angle) * flen * 0.85f);
+            using var dirPen = new Pen(Color.FromArgb(200, 255, 220, 0), 1f);
+            g.DrawLine(dirPen, ppx, ppy, fx, fy);
 
             // Oyuncu noktası
-            using var playerBrush = new SolidBrush(Color.FromArgb(255, 255, 220, 0));
-            g.FillEllipse(playerBrush, ppx - 3, ppy - 3, 6, 6);
+            using var playerBr = new SolidBrush(Color.FromArgb(255, 255, 220, 0));
+            g.FillEllipse(playerBr, ppx - 3, ppy - 3, 6, 6);
 
             // Çerçeve
-            using var borderPen = new Pen(Color.FromArgb(180, 100, 80, 60), 1f);
-            g.DrawRectangle(borderPen, ox - 2, oy - 2, mmW + 3, mmH + 3);
+            using var border = new Pen(Color.FromArgb(180, 120, 90, 55), 1f);
+            g.DrawRectangle(border, ox - 1, oy - 1, pw + 1, ph + 1);
+
+            // MAP etiketi — haritanın hemen üstünde ortalı, ekran içinde
+            var mapLabelSz = TextRenderer.MeasureText(g, "MAP", _fontLabel,
+                new Size(200, 40), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+            int labelX = ox + (pw - mapLabelSz.Width) / 2;
+            int labelY = oy - mapLabelSz.Height - 2;   // oy zaten LABEL_H kadar aşağıda
+            TextRenderer.DrawText(g, "MAP", _fontLabel,
+                new Point(labelX, labelY),
+                Color.FromArgb(220, 200, 170, 110),
+                TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+        }
+
+        public void Dispose()
+        {
+            _fontUI.Dispose();
+            _fontLabel.Dispose();
         }
     }
 }

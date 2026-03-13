@@ -1,31 +1,33 @@
 // ============================================================
-// Program.cs — Oyunun başlangıç noktası
+// Program.cs — DPI Aware başlangıç noktası
 //
-// [STAThread]: Windows Forms için zorunlu öznitelik.
-//   "Single Thread Apartment" modunu etkinleştirir.
-//   Bu mod olmadan pencere ve fare olayları doğru çalışmaz.
-//   ÖNEMLİ: Bu öznitelik sadece klasik Main() metoduna
-//   uygulanabilir — top-level statements ile çalışmaz.
-//
-// Application.Run: GameForm penceresini açar ve pencere
-//   kapanana kadar programı çalışır durumda tutar.
+// SetProcessDpiAwarenessContext: Windows'a "Ben DPI'yı kendim
+// yönetiyorum, senin ölçeklendirmene gerek yok" der.
+// Bu olmadan %125/%150 DPI'da ClientSize yanlış hesaplanır,
+// HUD koordinatları kayar.
 // ============================================================
 
+using System.Runtime.InteropServices;
 using G_1_A3D_f.UI;
 
-// Klasik Main metodu — [STAThread] özniteliği için gerekli
 internal static class Program
 {
+    // Windows API: Process'i Per-Monitor V2 DPI aware yapar
+    [DllImport("user32.dll")]
+    private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+
+    // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+    private static readonly IntPtr DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = new IntPtr(-4);
+
     [STAThread]
     static void Main()
     {
-        // Visual Styles: Windows'un modern görsel temasını etkinleştirir
+        // DPI ölçeklendirmesini devre dışı bırak — koordinatlar 1:1 piksel olur
+        try { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2); }
+        catch { /* Eski Windows sürümlerinde desteklenmeyebilir, devam et */ }
+
         Application.EnableVisualStyles();
-
-        // Eski .NET 1.x uyumluluk modu kapalı — modern metin çizimi kullan
         Application.SetCompatibleTextRenderingDefault(false);
-
-        // Oyun penceresini aç ve kapanana kadar çalış
         Application.Run(new GameForm());
     }
 }

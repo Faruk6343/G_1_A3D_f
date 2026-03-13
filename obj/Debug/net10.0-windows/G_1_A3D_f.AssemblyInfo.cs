@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("G_1_A3D_f")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+747ea03037de7d474a8998a6ee5dc7e3c645edd3")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+74dc7251d214f50441f9111ae6be4fcb9f97bf34")]
 [assembly: System.Reflection.AssemblyProductAttribute("G_1_A3D_f")]
 [assembly: System.Reflection.AssemblyTitleAttribute("G_1_A3D_f")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
